@@ -15,28 +15,20 @@ const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, wallet);
 
+
 const upload = multer({ dest: 'uploads/' });
 const app = express();
 const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
-// {
-//     origin: [
-//       "https://doc-guard-vault-v3on.vercel.app/",
-//     ],
-//     credentials: true,
-//     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-//   }
 
-// Utility: compute file hash
 const getFileHash = (filePath) => {
   const fileBuffer = fs.readFileSync(filePath);
   return ethers.keccak256(new Uint8Array(fileBuffer));
 };
 
-// Utility: Upload to Pinata (IPFS)
 async function uploadToPinata(filepath, filename) {
-  const url = `https://api.pinata.cloud/pinning/pinFileToIPFS`;
+  const url =`https://api.pinata.cloud/pinning/pinFileToIPFS`;
   const data = new FormData();
   data.append('file', fs.createReadStream(filepath), filename);
 
@@ -51,7 +43,6 @@ async function uploadToPinata(filepath, filename) {
   return res.data.IpfsHash;
 }
 
-// 1. File Upload Route
 app.post('/upload', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
@@ -63,10 +54,14 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
     const fileHash = getFileHash(file.path);
 
-    // Upload to IPFS (Pinata)
+    // Log debug info
+    console.log("Params for uploadFile:", { fileHash, ipfsCID: "(TBD)", signature });
+
     const ipfsCID = await uploadToPinata(file.path, file.originalname);
 
-    // Log to blockchain
+    // Log more debug info
+    console.log("About to call contract.uploadFile", { fileHash, ipfsCID, signature });
+
     const tx = await contract.uploadFile(fileHash, ipfsCID, signature);
     await tx.wait();
 
@@ -94,12 +89,15 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// 2. Get File Record (for verification)
+app.listen(PORT, () => {
+  console.log(`BlockVault backend running on port ${PORT}`);
+});
+
+// Add to your index.js, after the other routes
 app.get('/getFile/:hash', async (req, res) => {
   try {
     const { hash } = req.params;
-    // NOTE: In production, access control is checked by contract (msg.sender)
-    // Here, backend uses provider (relayer) account, so it should have access to all records.
+    // Returns: (uploader, ipfsCID, signature, timestamp)
     const record = await contract.getFileRecord(hash);
     res.json({
       uploader: record.uploader || record[0],
@@ -108,12 +106,10 @@ app.get('/getFile/:hash', async (req, res) => {
       timestamp: Number(record.timestamp || record[3])
     });
   } catch (err) {
-    // If contract throws "Access denied", this will return empty.
     res.json({});
   }
 });
 
-// 3. Audit Trail — All upload events (recent)
 app.get("/auditTrail", async (req, res) => {
   try {
     const latestBlock = await provider.getBlockNumber();
@@ -156,6 +152,38 @@ app.get("/auditTrail", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`BlockVault backend running on port ${PORT}`);
+app.post('/grantAccess', async (req, res) => {
+  try {
+    const { fileHash, grantee } = req.body;
+    if (!fileHash || !grantee) return res.status(400).json({ error: "Missing fileHash or grantee address" });
+    const tx = await contract.grantAccess(fileHash, grantee);
+    await tx.wait();
+    res.json({ status: "success", txHash: tx.hash });
+  } catch (err) {
+    res.status(500).json({ error: "Grant access failed", details: err.message });
+  }
+});
+
+// Revoke Access
+app.post('/revokeAccess', async (req, res) => {
+  try {
+    const { fileHash, grantee } = req.body;
+    if (!fileHash || !grantee) return res.status(400).json({ error: "Missing fileHash or grantee address" });
+    const tx = await contract.revokeAccess(fileHash, grantee);
+    await tx.wait();
+    res.json({ status: "success", txHash: tx.hash });
+  } catch (err) {
+    res.status(500).json({ error: "Revoke access failed", details: err.message });
+  }
+});
+
+// Can Access (status)
+app.get('/canAccess/:fileHash/:address', async (req, res) => {
+  try {
+    const { fileHash, address } = req.params;
+    const canAccess = await contract.canAccess(fileHash, address);
+    res.json({ fileHash, address, canAccess });
+  } catch (err) {
+    res.status(500).json({ error: "Access check failed", details: err.message });
+  }
 });
