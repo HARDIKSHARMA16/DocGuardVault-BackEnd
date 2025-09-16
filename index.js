@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 5000;
 app.use(
   cors({
     origin: [
-      "https://med-chain-vault-frontend.vercel.app",
+      "https://doc-guard-vault-v3on.vercel.app/",
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
