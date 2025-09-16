@@ -18,16 +18,15 @@ const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, wallet);
 const upload = multer({ dest: 'uploads/' });
 const app = express();
 const PORT = process.env.PORT || 5000;
-app.use(
-  cors({
-    origin: [
-      "https://doc-guard-vault-v3on.vercel.app/",
-    ],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-  })
-);
+app.use(cors());
 app.use(express.json());
+// {
+//     origin: [
+//       "https://doc-guard-vault-v3on.vercel.app/",
+//     ],
+//     credentials: true,
+//     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+//   }
 
 // Utility: compute file hash
 const getFileHash = (filePath) => {
